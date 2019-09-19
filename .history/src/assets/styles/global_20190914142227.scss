@@ -1,0 +1,6 @@
+@import 'reset.scss';
+// 1 rem = fontSize px
+// 1 px = (1 / fontSize) rem
+@function px2rem($px) {
+    @return ()+rem
+}

@@ -1,0 +1,229 @@
+<template>
+  <div class='ebook'>
+    <!-- 阅读器 标题栏 -->
+    <TitleBar :ifTitleAndMenuShow="ifTitleAndMenuShow"></TitleBar>
+
+    <!-- 阅读器 阅读主体 -->
+    <div class="read-wrapper">
+      <div id="read"></div>
+      <div class="mask">
+        <div class="left" @click="prevPage"></div>
+        <div class="center" @click="toggleTitleAndMenu"></div>
+        <div class="left" @click="nextPage"></div>
+      </div>
+    </div>
+
+    <!-- 阅读器 菜单栏 -->
+    <MenuBar ref="menuBar"
+            :ifTitleAndMenuShow="ifTitleAndMenuShow"
+            :menusList="menusList"
+            :fontSizeList="fontSizeList"
+            :defaultFontSize="defaultFontSize"
+            @setFontSize="setFontSize"
+            :themesList="themesList"
+            :defaultTheme="defaultTheme"
+            @setTheme="setTheme"
+            :ifBookAvailable="ifBookAvailable"
+            @onProgressChange="onProgressChange">
+    </MenuBar>
+  </div>
+</template>
+
+<script>
+import Epub from 'epubjs' // 导入阅读器引擎
+import TitleBar from '@/components/TitleBar.vue' // 导入组件
+import MenuBar from '@/components/MenuBar.vue' // 导入组件
+// global.ePub = Epub
+
+// 定义常量, 存储本地资源里的epub电子书路径, 以便epub.js解析
+// PS: 此处路径需注意, 放在public文件夹内, 写url的时候不要写../public
+const DOWNLOAD_URL = '/HistoryofChinesePainting.epub'
+
+export default {
+  name: 'ebook',
+  data () {
+    return {
+      book: {}, // 储存 epub.book对象
+      rendition: {}, // 储存 epub.book.rendition对象
+      themes: {}, // 储存epub.book.rendition.themes对象
+      locations: {}, // 储存epub.book.locations对象
+      navigation: {}, // 储存epub.book.navigation对象
+      ifBookAvailable: false, // 判断书籍是否处于可用状态, 默认不可用, 当locations生成后设为true
+      menusList: [
+        {
+          name: 'icon-menu',
+          text: ''
+        },
+        {
+          name: 'icon-progress',
+          text: ''
+        },
+        {
+          name: 'icon-bright',
+          text: ''
+        },
+        {
+          name: 'icon-a',
+          text: 'A'
+        }
+      ],
+      ifTitleAndMenuShow: false, // 控制 标题和菜单栏 显示/隐藏
+      fontSizeList: [
+        { fontSize: 12 },
+        { fontSize: 14 },
+        { fontSize: 16 },
+        { fontSize: 18 },
+        { fontSize: 20 },
+        { fontSize: 22 },
+        { fontSize: 24 }
+      ], // 设置字体大小数组
+      defaultFontSize: 16, // 默认选中字体大小
+      themesList: [
+        {
+          name: 'default',
+          style: {
+            body: {
+              'color': '#222',
+              'background': '#fff'
+            }
+          }
+        },
+        {
+          name: 'eye',
+          style: {
+            body: {
+              'color': '#222',
+              'background': '#ceeaba'
+            }
+          }
+        },
+        {
+          name: 'night',
+          style: {
+            body: {
+              'color': '#fff',
+              'background': '#444'
+            }
+          }
+        },
+        {
+          name: 'gold',
+          style: {
+            body: {
+              'color': '#222',
+              'background': 'rgb(241, 236, 226)'
+            }
+          }
+        }
+      ],
+      defaultTheme: 1 // 默认选中 '护眼模式' 主题样式
+    }
+  },
+  components: {
+    TitleBar,
+    MenuBar
+  },
+  methods: {
+    // --------------------------------电子书的解析和渲染--------------------------------
+    showEpub () {
+      // 1.生成book对象
+      this.book = new Epub(DOWNLOAD_URL)
+      // console.log(this.book)
+
+      // 2.生成 Rendition, 通过 book.renderTo ---renderTo(element, options)
+      this.rendition = this.book.renderTo('read', { // 电子书挂载点在id名为read的元素内
+        width: window.innerWidth,
+        height: window.innerHeight
+      })
+
+      // 3.通过 Rendition.display 渲染电子书
+      this.rendition.display()
+
+      // 4.获取themes对象, 以便改变阅读样式
+      this.themes = this.rendition.themes
+      this.themes.fontSize(this.defaultFontSize + 'px')
+
+      // 5.通过themes.register(name,style)注册主题样式
+      this.themesList.forEach((item) => {
+        this.themes.register(item.name, item.style)
+      })
+      // 6.通过themes.select(name)选择默认样式
+      this.themes.select(this.themesList[this.defaultTheme].name)
+
+      // 7.获取locations对象(加载电子书的时候默认不会生成,因为性能消耗较大,用的时候手动生成)
+      // 通过epub.js的钩子函数来实现
+      this.book.ready.then(() => {
+        this.navigation = this.book.navigation // 获取book.navigation对象
+        console.log(this.navigation)
+        return this.book.locations.generate()
+      }).then(res => {
+        // console.log(res) // 返回一个由多个epubcfi组成的字符串数组
+        this.locations = this.book.locations
+        this.ifBookAvailable = true
+      })
+    },
+
+    // ---------------------------------电子书上一页--------------------------------
+    prevPage () { // Rendition.prev
+      this.rendition && this.rendition.prev()
+    },
+    // ---------------------------------电子书下一页--------------------------------
+    nextPage () { // Rendition.next
+      this.rendition && this.rendition.next()
+    },
+    toggleTitleAndMenu () {
+      this.ifTitleAndMenuShow = !this.ifTitleAndMenuShow
+      !this.ifTitleAndMenuShow && this.$refs.menuBar.hideSetting()
+    },
+    // ---------------------------------监听menu子组件点击事件切换字体大小 通过epub.book.renditin提供的themes对象--------------------------------
+    setFontSize (fontSize) {
+      this.defaultFontSize = fontSize
+      this.themes && this.themes.fontSize(fontSize + 'px')
+    },
+    // ---------------------------------监听menu子组件点击事件切换主题样式--------------------------------
+    setTheme (themeIndex) {
+      this.defaultTheme = themeIndex
+      this.themes && this.themes.select(this.themesList[this.defaultTheme].name)
+    },
+    // ---------------------------------进度跳转--------------------------------
+    // progress 进度条数值 0-100
+    onProgressChange (progress) {
+      const percentage = progress / 100 // 进度百分比
+      const location = percentage > 0 ? this.locations.cfiFromPercentage(percentage) : 0 // 定位: 当前百分比对应定位页标识 或者 第1页
+      this.rendition.display(location) // 跳转到对应页
+    }
+  },
+  mounted () {
+    this.showEpub()
+  }
+}
+</script>
+
+<style lang='scss' scoped>
+@import '@/assets/styles/global';
+
+.ebook{
+  position: relative;
+  .read-wrapper{
+    .mask{
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 100;
+      display: flex;
+      width: 100%;
+      height: 100%;
+      .left,.rigth{
+        flex: 0 0 px2rem(100);
+        // background-color: #4f2;
+        // opacity: .2;
+      }
+      .center{
+        flex: 1;
+        // background-color: #62d;
+        // opacity: .2;
+      }
+    }
+  }
+}
+</style>
